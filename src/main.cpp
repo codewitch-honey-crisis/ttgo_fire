@@ -1,0 +1,351 @@
+#if __has_include(<Arduino.h>)
+#include <Arduino.h>
+#endif
+//#define BLUE_FLAME
+#include <stdio.h>
+#include <stdlib.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <driver/gpio.h>
+#include <driver/spi_master.h>
+#include <esp_lcd_panel_io.h>
+#include <esp_lcd_panel_ops.h>
+#include <esp_lcd_panel_vendor.h>
+// this is the handle from the esp panel api
+static esp_lcd_panel_handle_t lcd_handle;
+#include <gfx.hpp>
+#include <uix.hpp>
+using namespace gfx;
+using namespace uix;
+using color_t = gfx::color<typename gfx::rgb_pixel<16>>;
+#define SCREEN_WIDTH 240
+#define SCREEN_HEIGHT 135
+constexpr static const size_t BUF_WIDTH = (SCREEN_WIDTH / 4);
+constexpr static const size_t BUF_HEIGHT = ((SCREEN_HEIGHT / 4) + 6);
+using rgb565=rgb_pixel<16>;
+// VGA color palette for flames
+static rgb565 fire_cols[] = {
+    rgb565(0, 0, 0), rgb565(0, 0, 3), rgb565(0, 0, 3), rgb565(0, 0, 3),
+    rgb565(0, 0, 4), rgb565(0, 0, 4), rgb565(0, 0, 4), rgb565(0, 0, 5),
+    rgb565(1, 0, 5), rgb565(2, 0, 4), rgb565(3, 0, 4), rgb565(4, 0, 4),
+    rgb565(5, 0, 3), rgb565(6, 0, 3), rgb565(7, 0, 3), rgb565(8, 0, 2),
+    rgb565(9, 0, 2), rgb565(10, 0, 2), rgb565(11, 0, 2), rgb565(12, 0, 1),
+    rgb565(13, 0, 1), rgb565(14, 0, 1), rgb565(15, 0, 0), rgb565(16, 0, 0),
+    rgb565(16, 0, 0), rgb565(16, 0, 0), rgb565(17, 0, 0), rgb565(17, 0, 0),
+    rgb565(18, 0, 0), rgb565(18, 0, 0), rgb565(18, 0, 0), rgb565(19, 0, 0),
+    rgb565(19, 0, 0), rgb565(20, 0, 0), rgb565(20, 0, 0), rgb565(20, 0, 0),
+    rgb565(21, 0, 0), rgb565(21, 0, 0), rgb565(22, 0, 0), rgb565(22, 0, 0),
+    rgb565(23, 1, 0), rgb565(23, 1, 0), rgb565(24, 2, 0), rgb565(24, 2, 0),
+    rgb565(25, 3, 0), rgb565(25, 3, 0), rgb565(26, 4, 0), rgb565(26, 4, 0),
+    rgb565(27, 5, 0), rgb565(27, 5, 0), rgb565(28, 6, 0), rgb565(28, 6, 0),
+    rgb565(29, 7, 0), rgb565(29, 7, 0), rgb565(30, 8, 0), rgb565(30, 8, 0),
+    rgb565(31, 9, 0), rgb565(31, 9, 0), rgb565(31, 10, 0), rgb565(31, 10, 0),
+    rgb565(31, 11, 0), rgb565(31, 11, 0), rgb565(31, 12, 0), rgb565(31, 12, 0),
+    rgb565(31, 13, 0), rgb565(31, 13, 0), rgb565(31, 14, 0), rgb565(31, 14, 0),
+    rgb565(31, 15, 0), rgb565(31, 15, 0), rgb565(31, 16, 0), rgb565(31, 16, 0),
+    rgb565(31, 17, 0), rgb565(31, 17, 0), rgb565(31, 18, 0), rgb565(31, 18, 0),
+    rgb565(31, 19, 0), rgb565(31, 19, 0), rgb565(31, 20, 0), rgb565(31, 20, 0),
+    rgb565(31, 21, 0), rgb565(31, 21, 0), rgb565(31, 22, 0), rgb565(31, 22, 0),
+    rgb565(31, 23, 0), rgb565(31, 24, 0), rgb565(31, 24, 0), rgb565(31, 25, 0),
+    rgb565(31, 25, 0), rgb565(31, 26, 0), rgb565(31, 26, 0), rgb565(31, 27, 0),
+    rgb565(31, 27, 0), rgb565(31, 28, 0), rgb565(31, 28, 0), rgb565(31, 29, 0),
+    rgb565(31, 29, 0), rgb565(31, 30, 0), rgb565(31, 30, 0), rgb565(31, 31, 0),
+    rgb565(31, 31, 0), rgb565(31, 32, 0), rgb565(31, 32, 0), rgb565(31, 33, 0),
+    rgb565(31, 33, 0), rgb565(31, 34, 0), rgb565(31, 34, 0), rgb565(31, 35, 0),
+    rgb565(31, 35, 0), rgb565(31, 36, 0), rgb565(31, 36, 0), rgb565(31, 37, 0),
+    rgb565(31, 38, 0), rgb565(31, 38, 0), rgb565(31, 39, 0), rgb565(31, 39, 0),
+    rgb565(31, 40, 0), rgb565(31, 40, 0), rgb565(31, 41, 0), rgb565(31, 41, 0),
+    rgb565(31, 42, 0), rgb565(31, 42, 0), rgb565(31, 43, 0), rgb565(31, 43, 0),
+    rgb565(31, 44, 0), rgb565(31, 44, 0), rgb565(31, 45, 0), rgb565(31, 45, 0),
+    rgb565(31, 46, 0), rgb565(31, 46, 0), rgb565(31, 47, 0), rgb565(31, 47, 0),
+    rgb565(31, 48, 0), rgb565(31, 48, 0), rgb565(31, 49, 0), rgb565(31, 49, 0),
+    rgb565(31, 50, 0), rgb565(31, 50, 0), rgb565(31, 51, 0), rgb565(31, 52, 0),
+    rgb565(31, 52, 0), rgb565(31, 52, 0), rgb565(31, 52, 0), rgb565(31, 52, 0),
+    rgb565(31, 53, 0), rgb565(31, 53, 0), rgb565(31, 53, 0), rgb565(31, 53, 0),
+    rgb565(31, 54, 0), rgb565(31, 54, 0), rgb565(31, 54, 0), rgb565(31, 54, 0),
+    rgb565(31, 54, 0), rgb565(31, 55, 0), rgb565(31, 55, 0), rgb565(31, 55, 0),
+    rgb565(31, 55, 0), rgb565(31, 56, 0), rgb565(31, 56, 0), rgb565(31, 56, 0),
+    rgb565(31, 56, 0), rgb565(31, 57, 0), rgb565(31, 57, 0), rgb565(31, 57, 0),
+    rgb565(31, 57, 0), rgb565(31, 57, 0), rgb565(31, 58, 0), rgb565(31, 58, 0),
+    rgb565(31, 58, 0), rgb565(31, 58, 0), rgb565(31, 59, 0), rgb565(31, 59, 0),
+    rgb565(31, 59, 0), rgb565(31, 59, 0), rgb565(31, 60, 0), rgb565(31, 60, 0),
+    rgb565(31, 60, 0), rgb565(31, 60, 0), rgb565(31, 60, 0), rgb565(31, 61, 0),
+    rgb565(31, 61, 0), rgb565(31, 61, 0), rgb565(31, 61, 0), rgb565(31, 62, 0),
+    rgb565(31, 62, 0), rgb565(31, 62, 0), rgb565(31, 62, 0), rgb565(31, 63, 0),
+    rgb565(31, 63, 0), rgb565(31, 63, 1), rgb565(31, 63, 1), rgb565(31, 63, 2),
+    rgb565(31, 63, 2), rgb565(31, 63, 3), rgb565(31, 63, 3), rgb565(31, 63, 4),
+    rgb565(31, 63, 4), rgb565(31, 63, 5), rgb565(31, 63, 5), rgb565(31, 63, 5),
+    rgb565(31, 63, 6), rgb565(31, 63, 6), rgb565(31, 63, 7), rgb565(31, 63, 7),
+    rgb565(31, 63, 8), rgb565(31, 63, 8), rgb565(31, 63, 9), rgb565(31, 63, 9),
+    rgb565(31, 63, 10), rgb565(31, 63, 10), rgb565(31, 63, 10), rgb565(31, 63, 11),
+    rgb565(31, 63, 11), rgb565(31, 63, 12), rgb565(31, 63, 12), rgb565(31, 63, 13),
+    rgb565(31, 63, 13), rgb565(31, 63, 14), rgb565(31, 63, 14), rgb565(31, 63, 15),
+    rgb565(31, 63, 15), rgb565(31, 63, 15), rgb565(31, 63, 16), rgb565(31, 63, 16),
+    rgb565(31, 63, 17), rgb565(31, 63, 17), rgb565(31, 63, 18), rgb565(31, 63, 18),
+    rgb565(31, 63, 19), rgb565(31, 63, 19), rgb565(31, 63, 20), rgb565(31, 63, 20),
+    rgb565(31, 63, 21), rgb565(31, 63, 21), rgb565(31, 63, 21), rgb565(31, 63, 22),
+    rgb565(31, 63, 22), rgb565(31, 63, 23), rgb565(31, 63, 23), rgb565(31, 63, 24),
+    rgb565(31, 63, 24), rgb565(31, 63, 25), rgb565(31, 63, 25), rgb565(31, 63, 26),
+    rgb565(31, 63, 26), rgb565(31, 63, 26), rgb565(31, 63, 27), rgb565(31, 63, 27),
+    rgb565(31, 63, 28), rgb565(31, 63, 28), rgb565(31, 63, 29), rgb565(31, 63, 29),
+    rgb565(31, 63, 30), rgb565(31, 63, 30), rgb565(31, 63, 31), rgb565(31, 63, 31)};
+
+// declare the format of the screen
+using screen_t = screen<rgb_pixel<16>>;
+using color_t = color<typename screen_t::pixel_type>;
+// for access to RGB8888 colors which controls use
+using color32_t = color<rgba_pixel<32>>;
+
+// UIX allows you to use two buffers for maximum DMA efficiency
+// you don't have to, but performance is significantly better
+// declare two buffers for transfer
+constexpr static const int lcd_buffer_size = bitmap<typename screen_t::pixel_type>::sizeof_buffer({SCREEN_WIDTH,SCREEN_HEIGHT/2});//32*1024;
+uint8_t *lcd_transfer_buffer1,*lcd_transfer_buffer2;
+
+// the main screen
+screen_t anim_screen;
+uint8_t fire_buf[BUF_HEIGHT][BUF_WIDTH]; // VGA buffer, quarter resolution w/extra lines
+void fire_on_paint(screen_t::control_surface_type &destination, const srect16 &clip, void* state)
+{
+    rgb_pixel<16> col;
+    for (int y = clip.y1; y <= clip.y2; y+=2)
+    {
+        for (int x = clip.x1; x <= clip.x2; x+=2)
+        {
+            int i = y >> 2;
+            int j = x >> 2;
+            //destination.point(point16(x, y), fire_cols[fire_buf[i][j]]);
+            destination.fill(rect16(x,y,x+1,y+1),fire_cols[fire_buf[i][j]]);
+        }
+    }
+}
+
+using canvas_t = canvas<typename screen_t::control_surface_type>;
+
+// the controls
+static canvas_t fire_canvas(anim_screen);
+
+// tell UIX the DMA transfer is complete
+static bool lcd_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
+{
+    anim_screen.flush_complete();
+    return true;
+}
+// tell the lcd panel api to transfer data via DMA
+static void lcd_on_flush(const rect16 &bounds, const void *bmp, void *state)
+{
+    int x1 = bounds.x1, y1 = bounds.y1, x2 = bounds.x2 + 1, y2 = bounds.y2 + 1;
+    esp_lcd_panel_draw_bitmap(lcd_handle, x1, y1, x2, y2, (void *)bmp);
+}
+// initialize the screen using the esp panel API
+static void lcd_panel_init()
+{
+    gpio_set_direction((gpio_num_t)4, GPIO_MODE_OUTPUT);
+    spi_bus_config_t buscfg;
+    memset(&buscfg, 0, sizeof(buscfg));
+    buscfg.sclk_io_num = 18;
+    buscfg.mosi_io_num = 19;
+    buscfg.miso_io_num = -1;
+    buscfg.quadwp_io_num = -1;
+    buscfg.quadhd_io_num = -1;
+    buscfg.max_transfer_sz = sizeof(lcd_buffer_size) + 8;
+
+    // Initialize the SPI bus on VSPI (SPI3)
+    spi_bus_initialize(SPI3_HOST, &buscfg, SPI_DMA_CH_AUTO);
+
+    esp_lcd_panel_io_handle_t io_handle = NULL;
+    esp_lcd_panel_io_spi_config_t io_config;
+    memset(&io_config, 0, sizeof(io_config));
+    io_config.dc_gpio_num = 16,
+    io_config.cs_gpio_num = 5,
+    io_config.pclk_hz = 40 * 1000 * 1000,
+    io_config.lcd_cmd_bits = 8,
+    io_config.lcd_param_bits = 8,
+    io_config.spi_mode = 0,
+    io_config.trans_queue_depth = 10,
+    io_config.on_color_trans_done = lcd_flush_ready;
+    // Attach the LCD to the SPI bus
+    esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)SPI3_HOST, &io_config, &io_handle);
+
+    lcd_handle = NULL;
+    esp_lcd_panel_dev_config_t panel_config;
+    memset(&panel_config, 0, sizeof(panel_config));
+    panel_config.reset_gpio_num = 23;
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+    panel_config.rgb_endian = LCD_RGB_ENDIAN_RGB;
+#else
+    panel_config.color_space = ESP_LCD_COLOR_SPACE_RGB;
+#endif
+    panel_config.bits_per_pixel = 16;
+
+    // Initialize the LCD configuration
+    esp_lcd_new_panel_st7789(io_handle, &panel_config, &lcd_handle);
+
+    // Turn off backlight to avoid unpredictable display on the LCD screen while initializing
+    // the LCD panel driver. (Different LCD screens may need different levels)
+    gpio_set_level((gpio_num_t)4, 0);
+    // Reset the display
+    esp_lcd_panel_reset(lcd_handle);
+
+    // Initialize LCD panel
+    esp_lcd_panel_init(lcd_handle);
+    // esp_lcd_panel_io_tx_param(io_handle, LCD_CMD_SLPOUT, NULL, 0);
+    //  Swap x and y axis (Different LCD screens may need different options)
+    esp_lcd_panel_swap_xy(lcd_handle, true);
+    esp_lcd_panel_set_gap(lcd_handle, 40, 52);
+    esp_lcd_panel_mirror(lcd_handle, false, true);
+    esp_lcd_panel_invert_color(lcd_handle, true);
+    // Turn on the screen
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+    esp_lcd_panel_disp_on_off(lcd_handle, true);
+#else
+    esp_lcd_panel_disp_off(lcd_handle, false);
+#endif
+    // Turn on backlight (Different LCD screens may need different levels)
+    gpio_set_level((gpio_num_t)4, 1);
+}
+
+
+// initialize the screens and controls
+static void screen_init()
+{
+    anim_screen.dimensions(ssize16(SCREEN_WIDTH,SCREEN_HEIGHT));
+    anim_screen.buffer_size(lcd_buffer_size);
+    anim_screen.buffer1(lcd_transfer_buffer1);
+    anim_screen.buffer2(lcd_transfer_buffer2);
+    const rgba_pixel<32> transparent(0, 0, 0, 0);
+    fire_canvas.bounds(anim_screen.bounds());
+    fire_canvas.on_paint_callback(fire_on_paint);
+    anim_screen.register_control(fire_canvas);
+    anim_screen.background_color(color_t::black);
+    anim_screen.on_flush_callback(lcd_on_flush);
+}
+#ifdef ARDUINO
+void setup()
+{
+    Serial.begin(115200);
+    Serial.printf("Arduino version: %d.%d.%d\n",ESP_ARDUINO_VERSION_MAJOR,ESP_ARDUINO_VERSION_MINOR,ESP_ARDUINO_VERSION_PATCH);
+#else
+void loop();
+extern "C" void app_main() 
+{
+    printf("ESP-IDF version %d.%d.%d\n",ESP_IDF_VERSION_MAJOR, ESP_IDF_VERSION_MINOR,ESP_IDF_VERSION_PATCH);
+#endif
+    lcd_panel_init();
+
+    lcd_transfer_buffer1 = (uint8_t*)heap_caps_malloc(lcd_buffer_size,MALLOC_CAP_DMA);
+    lcd_transfer_buffer2 = (uint8_t*)heap_caps_malloc(lcd_buffer_size,MALLOC_CAP_DMA);
+    if(lcd_transfer_buffer1==nullptr||lcd_transfer_buffer2==nullptr) {
+        printf("Out of memory");
+        while(1);
+    }
+    for (int i = 0; i < BUF_HEIGHT; i++) {
+        for (int j = 0; j < BUF_WIDTH; j++) {
+            fire_buf[i][j] = 0;
+        }
+    }
+#ifdef BLUE_FLAME
+    for(int i = 0;i<256;++i) {
+        auto px = fire_cols[i];
+        auto tmp = px.template channel<channel_name::R>();
+        px.template channel<channel_name::R>(px.template channel<channel_name::B>());
+        px.template channel<channel_name::B>(tmp);
+        fire_cols[i]=px;
+    }
+#endif
+    // init the UI screen
+    screen_init();
+
+#ifndef ARDUINO
+    while(1) {
+        loop();
+        /*static int count = 0;
+        if(count++>6) {
+            vTaskDelay(5);
+            count = 0;
+        }*/
+    }
+#endif
+}
+
+void loop()
+{
+    static int frames = 0;
+    static char szfps[64];
+    static uint32_t fps_ts = 0;
+    static int old_frames = 0;
+    uint32_t ms = pdTICKS_TO_MS(xTaskGetTickCount());
+
+    unsigned int i, j, delta;    // looping variables, counters, and data
+    for (i = 1; i < BUF_HEIGHT; ++i)
+    {
+        for (j = 0; j < BUF_WIDTH; ++j)
+        {
+            if (j == 0)
+                fire_buf[i - 1][j] = (fire_buf[i][j] +
+                                fire_buf[i - 1][BUF_WIDTH - 1] +
+                                fire_buf[i][j + 1] +
+                                fire_buf[i + 1][j]) >>
+                                2;
+            else if (j == SCREEN_WIDTH/4-1)
+                fire_buf[i - 1][j] = (fire_buf[i][j] +
+                                fire_buf[i][j - 1] +
+                                fire_buf[i + 1][0] +
+                                fire_buf[i + 1][j]) >>
+                                2;
+            else
+                fire_buf[i - 1][j] = (fire_buf[i][j] +
+                                fire_buf[i][j - 1] +
+                                fire_buf[i][j + 1] +
+                                fire_buf[i + 1][j]) >>
+                                2;
+
+            if (fire_buf[i][j] > 11)
+                fire_buf[i][j] = fire_buf[i][j] - 12;
+            else if (fire_buf[i][j] > 3)
+                fire_buf[i][j] = fire_buf[i][j] - 4;
+            else
+            {
+                if (fire_buf[i][j] > 0)
+                    fire_buf[i][j]--;
+                if (fire_buf[i][j] > 0)
+                    fire_buf[i][j]--;
+                if (fire_buf[i][j] > 0)
+                    fire_buf[i][j]--;
+            }
+        }
+    }
+    delta = 0;
+    for (j = 0; j < BUF_WIDTH; j++)
+    {
+        if (rand() % 10 < 5)
+        {
+            delta = (rand() & 1) * 255;
+        }
+        fire_buf[BUF_HEIGHT - 2][j] = delta;
+        fire_buf[BUF_HEIGHT - 1][j] = delta;
+    }
+    static uint32_t total_ms = 0;
+    ++frames;
+
+    if (ms > fps_ts + 1000)
+    {
+        fps_ts = ms;
+        if(old_frames!=frames) {
+            old_frames = frames;
+            if(frames==0) {
+                snprintf(szfps, sizeof(szfps), "fps: < 1, total: %d ms",(int)total_ms);
+            } else {
+                snprintf(szfps, sizeof(szfps), "fps: %d, avg: %d ms", (int)frames,(int)total_ms/frames);
+            }
+        }
+        puts(szfps);
+        frames = 0;
+        total_ms = 0;
+    }
+
+    fire_canvas.invalidate();
+    ms = pdTICKS_TO_MS(xTaskGetTickCount());
+    anim_screen.update();
+    total_ms+=(pdTICKS_TO_MS(xTaskGetTickCount())-ms);
+}
