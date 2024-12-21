@@ -1,3 +1,4 @@
+#define USE_SPANS
 #if __has_include(<Arduino.h>)
 #include <Arduino.h>
 #endif
@@ -22,73 +23,82 @@ using color_t = gfx::color<typename gfx::rgb_pixel<16>>;
 #define SCREEN_HEIGHT 135
 constexpr static const size_t BUF_WIDTH = (SCREEN_WIDTH / 4);
 constexpr static const size_t BUF_HEIGHT = ((SCREEN_HEIGHT / 4) + 6);
-using rgb565=rgb_pixel<16>;
+#ifdef USE_SPANS
+#define PAL_TYPE uint16_t
+// store preswapped uint16_ts for performance
+#define RGB(r,g,b) (bits::swap(rgb_pixel<16>(r,g,b)))
+#else
+// store rgb_pixel<16> instances
+#define PAL_TYPE rgb_pixel<16>
+#define RGB(r,g,b) rgb_pixel<16>(r,g,b)
+#endif
+
 // VGA color palette for flames
-static rgb565 fire_cols[] = {
-    rgb565(0, 0, 0), rgb565(0, 0, 3), rgb565(0, 0, 3), rgb565(0, 0, 3),
-    rgb565(0, 0, 4), rgb565(0, 0, 4), rgb565(0, 0, 4), rgb565(0, 0, 5),
-    rgb565(1, 0, 5), rgb565(2, 0, 4), rgb565(3, 0, 4), rgb565(4, 0, 4),
-    rgb565(5, 0, 3), rgb565(6, 0, 3), rgb565(7, 0, 3), rgb565(8, 0, 2),
-    rgb565(9, 0, 2), rgb565(10, 0, 2), rgb565(11, 0, 2), rgb565(12, 0, 1),
-    rgb565(13, 0, 1), rgb565(14, 0, 1), rgb565(15, 0, 0), rgb565(16, 0, 0),
-    rgb565(16, 0, 0), rgb565(16, 0, 0), rgb565(17, 0, 0), rgb565(17, 0, 0),
-    rgb565(18, 0, 0), rgb565(18, 0, 0), rgb565(18, 0, 0), rgb565(19, 0, 0),
-    rgb565(19, 0, 0), rgb565(20, 0, 0), rgb565(20, 0, 0), rgb565(20, 0, 0),
-    rgb565(21, 0, 0), rgb565(21, 0, 0), rgb565(22, 0, 0), rgb565(22, 0, 0),
-    rgb565(23, 1, 0), rgb565(23, 1, 0), rgb565(24, 2, 0), rgb565(24, 2, 0),
-    rgb565(25, 3, 0), rgb565(25, 3, 0), rgb565(26, 4, 0), rgb565(26, 4, 0),
-    rgb565(27, 5, 0), rgb565(27, 5, 0), rgb565(28, 6, 0), rgb565(28, 6, 0),
-    rgb565(29, 7, 0), rgb565(29, 7, 0), rgb565(30, 8, 0), rgb565(30, 8, 0),
-    rgb565(31, 9, 0), rgb565(31, 9, 0), rgb565(31, 10, 0), rgb565(31, 10, 0),
-    rgb565(31, 11, 0), rgb565(31, 11, 0), rgb565(31, 12, 0), rgb565(31, 12, 0),
-    rgb565(31, 13, 0), rgb565(31, 13, 0), rgb565(31, 14, 0), rgb565(31, 14, 0),
-    rgb565(31, 15, 0), rgb565(31, 15, 0), rgb565(31, 16, 0), rgb565(31, 16, 0),
-    rgb565(31, 17, 0), rgb565(31, 17, 0), rgb565(31, 18, 0), rgb565(31, 18, 0),
-    rgb565(31, 19, 0), rgb565(31, 19, 0), rgb565(31, 20, 0), rgb565(31, 20, 0),
-    rgb565(31, 21, 0), rgb565(31, 21, 0), rgb565(31, 22, 0), rgb565(31, 22, 0),
-    rgb565(31, 23, 0), rgb565(31, 24, 0), rgb565(31, 24, 0), rgb565(31, 25, 0),
-    rgb565(31, 25, 0), rgb565(31, 26, 0), rgb565(31, 26, 0), rgb565(31, 27, 0),
-    rgb565(31, 27, 0), rgb565(31, 28, 0), rgb565(31, 28, 0), rgb565(31, 29, 0),
-    rgb565(31, 29, 0), rgb565(31, 30, 0), rgb565(31, 30, 0), rgb565(31, 31, 0),
-    rgb565(31, 31, 0), rgb565(31, 32, 0), rgb565(31, 32, 0), rgb565(31, 33, 0),
-    rgb565(31, 33, 0), rgb565(31, 34, 0), rgb565(31, 34, 0), rgb565(31, 35, 0),
-    rgb565(31, 35, 0), rgb565(31, 36, 0), rgb565(31, 36, 0), rgb565(31, 37, 0),
-    rgb565(31, 38, 0), rgb565(31, 38, 0), rgb565(31, 39, 0), rgb565(31, 39, 0),
-    rgb565(31, 40, 0), rgb565(31, 40, 0), rgb565(31, 41, 0), rgb565(31, 41, 0),
-    rgb565(31, 42, 0), rgb565(31, 42, 0), rgb565(31, 43, 0), rgb565(31, 43, 0),
-    rgb565(31, 44, 0), rgb565(31, 44, 0), rgb565(31, 45, 0), rgb565(31, 45, 0),
-    rgb565(31, 46, 0), rgb565(31, 46, 0), rgb565(31, 47, 0), rgb565(31, 47, 0),
-    rgb565(31, 48, 0), rgb565(31, 48, 0), rgb565(31, 49, 0), rgb565(31, 49, 0),
-    rgb565(31, 50, 0), rgb565(31, 50, 0), rgb565(31, 51, 0), rgb565(31, 52, 0),
-    rgb565(31, 52, 0), rgb565(31, 52, 0), rgb565(31, 52, 0), rgb565(31, 52, 0),
-    rgb565(31, 53, 0), rgb565(31, 53, 0), rgb565(31, 53, 0), rgb565(31, 53, 0),
-    rgb565(31, 54, 0), rgb565(31, 54, 0), rgb565(31, 54, 0), rgb565(31, 54, 0),
-    rgb565(31, 54, 0), rgb565(31, 55, 0), rgb565(31, 55, 0), rgb565(31, 55, 0),
-    rgb565(31, 55, 0), rgb565(31, 56, 0), rgb565(31, 56, 0), rgb565(31, 56, 0),
-    rgb565(31, 56, 0), rgb565(31, 57, 0), rgb565(31, 57, 0), rgb565(31, 57, 0),
-    rgb565(31, 57, 0), rgb565(31, 57, 0), rgb565(31, 58, 0), rgb565(31, 58, 0),
-    rgb565(31, 58, 0), rgb565(31, 58, 0), rgb565(31, 59, 0), rgb565(31, 59, 0),
-    rgb565(31, 59, 0), rgb565(31, 59, 0), rgb565(31, 60, 0), rgb565(31, 60, 0),
-    rgb565(31, 60, 0), rgb565(31, 60, 0), rgb565(31, 60, 0), rgb565(31, 61, 0),
-    rgb565(31, 61, 0), rgb565(31, 61, 0), rgb565(31, 61, 0), rgb565(31, 62, 0),
-    rgb565(31, 62, 0), rgb565(31, 62, 0), rgb565(31, 62, 0), rgb565(31, 63, 0),
-    rgb565(31, 63, 0), rgb565(31, 63, 1), rgb565(31, 63, 1), rgb565(31, 63, 2),
-    rgb565(31, 63, 2), rgb565(31, 63, 3), rgb565(31, 63, 3), rgb565(31, 63, 4),
-    rgb565(31, 63, 4), rgb565(31, 63, 5), rgb565(31, 63, 5), rgb565(31, 63, 5),
-    rgb565(31, 63, 6), rgb565(31, 63, 6), rgb565(31, 63, 7), rgb565(31, 63, 7),
-    rgb565(31, 63, 8), rgb565(31, 63, 8), rgb565(31, 63, 9), rgb565(31, 63, 9),
-    rgb565(31, 63, 10), rgb565(31, 63, 10), rgb565(31, 63, 10), rgb565(31, 63, 11),
-    rgb565(31, 63, 11), rgb565(31, 63, 12), rgb565(31, 63, 12), rgb565(31, 63, 13),
-    rgb565(31, 63, 13), rgb565(31, 63, 14), rgb565(31, 63, 14), rgb565(31, 63, 15),
-    rgb565(31, 63, 15), rgb565(31, 63, 15), rgb565(31, 63, 16), rgb565(31, 63, 16),
-    rgb565(31, 63, 17), rgb565(31, 63, 17), rgb565(31, 63, 18), rgb565(31, 63, 18),
-    rgb565(31, 63, 19), rgb565(31, 63, 19), rgb565(31, 63, 20), rgb565(31, 63, 20),
-    rgb565(31, 63, 21), rgb565(31, 63, 21), rgb565(31, 63, 21), rgb565(31, 63, 22),
-    rgb565(31, 63, 22), rgb565(31, 63, 23), rgb565(31, 63, 23), rgb565(31, 63, 24),
-    rgb565(31, 63, 24), rgb565(31, 63, 25), rgb565(31, 63, 25), rgb565(31, 63, 26),
-    rgb565(31, 63, 26), rgb565(31, 63, 26), rgb565(31, 63, 27), rgb565(31, 63, 27),
-    rgb565(31, 63, 28), rgb565(31, 63, 28), rgb565(31, 63, 29), rgb565(31, 63, 29),
-    rgb565(31, 63, 30), rgb565(31, 63, 30), rgb565(31, 63, 31), rgb565(31, 63, 31)};
+static PAL_TYPE fire_cols[] = {
+    RGB(0, 0, 0), RGB(0, 0, 3), RGB(0, 0, 3), RGB(0, 0, 3),
+    RGB(0, 0, 4), RGB(0, 0, 4), RGB(0, 0, 4), RGB(0, 0, 5),
+    RGB(1, 0, 5), RGB(2, 0, 4), RGB(3, 0, 4), RGB(4, 0, 4),
+    RGB(5, 0, 3), RGB(6, 0, 3), RGB(7, 0, 3), RGB(8, 0, 2),
+    RGB(9, 0, 2), RGB(10, 0, 2), RGB(11, 0, 2), RGB(12, 0, 1),
+    RGB(13, 0, 1), RGB(14, 0, 1), RGB(15, 0, 0), RGB(16, 0, 0),
+    RGB(16, 0, 0), RGB(16, 0, 0), RGB(17, 0, 0), RGB(17, 0, 0),
+    RGB(18, 0, 0), RGB(18, 0, 0), RGB(18, 0, 0), RGB(19, 0, 0),
+    RGB(19, 0, 0), RGB(20, 0, 0), RGB(20, 0, 0), RGB(20, 0, 0),
+    RGB(21, 0, 0), RGB(21, 0, 0), RGB(22, 0, 0), RGB(22, 0, 0),
+    RGB(23, 1, 0), RGB(23, 1, 0), RGB(24, 2, 0), RGB(24, 2, 0),
+    RGB(25, 3, 0), RGB(25, 3, 0), RGB(26, 4, 0), RGB(26, 4, 0),
+    RGB(27, 5, 0), RGB(27, 5, 0), RGB(28, 6, 0), RGB(28, 6, 0),
+    RGB(29, 7, 0), RGB(29, 7, 0), RGB(30, 8, 0), RGB(30, 8, 0),
+    RGB(31, 9, 0), RGB(31, 9, 0), RGB(31, 10, 0), RGB(31, 10, 0),
+    RGB(31, 11, 0), RGB(31, 11, 0), RGB(31, 12, 0), RGB(31, 12, 0),
+    RGB(31, 13, 0), RGB(31, 13, 0), RGB(31, 14, 0), RGB(31, 14, 0),
+    RGB(31, 15, 0), RGB(31, 15, 0), RGB(31, 16, 0), RGB(31, 16, 0),
+    RGB(31, 17, 0), RGB(31, 17, 0), RGB(31, 18, 0), RGB(31, 18, 0),
+    RGB(31, 19, 0), RGB(31, 19, 0), RGB(31, 20, 0), RGB(31, 20, 0),
+    RGB(31, 21, 0), RGB(31, 21, 0), RGB(31, 22, 0), RGB(31, 22, 0),
+    RGB(31, 23, 0), RGB(31, 24, 0), RGB(31, 24, 0), RGB(31, 25, 0),
+    RGB(31, 25, 0), RGB(31, 26, 0), RGB(31, 26, 0), RGB(31, 27, 0),
+    RGB(31, 27, 0), RGB(31, 28, 0), RGB(31, 28, 0), RGB(31, 29, 0),
+    RGB(31, 29, 0), RGB(31, 30, 0), RGB(31, 30, 0), RGB(31, 31, 0),
+    RGB(31, 31, 0), RGB(31, 32, 0), RGB(31, 32, 0), RGB(31, 33, 0),
+    RGB(31, 33, 0), RGB(31, 34, 0), RGB(31, 34, 0), RGB(31, 35, 0),
+    RGB(31, 35, 0), RGB(31, 36, 0), RGB(31, 36, 0), RGB(31, 37, 0),
+    RGB(31, 38, 0), RGB(31, 38, 0), RGB(31, 39, 0), RGB(31, 39, 0),
+    RGB(31, 40, 0), RGB(31, 40, 0), RGB(31, 41, 0), RGB(31, 41, 0),
+    RGB(31, 42, 0), RGB(31, 42, 0), RGB(31, 43, 0), RGB(31, 43, 0),
+    RGB(31, 44, 0), RGB(31, 44, 0), RGB(31, 45, 0), RGB(31, 45, 0),
+    RGB(31, 46, 0), RGB(31, 46, 0), RGB(31, 47, 0), RGB(31, 47, 0),
+    RGB(31, 48, 0), RGB(31, 48, 0), RGB(31, 49, 0), RGB(31, 49, 0),
+    RGB(31, 50, 0), RGB(31, 50, 0), RGB(31, 51, 0), RGB(31, 52, 0),
+    RGB(31, 52, 0), RGB(31, 52, 0), RGB(31, 52, 0), RGB(31, 52, 0),
+    RGB(31, 53, 0), RGB(31, 53, 0), RGB(31, 53, 0), RGB(31, 53, 0),
+    RGB(31, 54, 0), RGB(31, 54, 0), RGB(31, 54, 0), RGB(31, 54, 0),
+    RGB(31, 54, 0), RGB(31, 55, 0), RGB(31, 55, 0), RGB(31, 55, 0),
+    RGB(31, 55, 0), RGB(31, 56, 0), RGB(31, 56, 0), RGB(31, 56, 0),
+    RGB(31, 56, 0), RGB(31, 57, 0), RGB(31, 57, 0), RGB(31, 57, 0),
+    RGB(31, 57, 0), RGB(31, 57, 0), RGB(31, 58, 0), RGB(31, 58, 0),
+    RGB(31, 58, 0), RGB(31, 58, 0), RGB(31, 59, 0), RGB(31, 59, 0),
+    RGB(31, 59, 0), RGB(31, 59, 0), RGB(31, 60, 0), RGB(31, 60, 0),
+    RGB(31, 60, 0), RGB(31, 60, 0), RGB(31, 60, 0), RGB(31, 61, 0),
+    RGB(31, 61, 0), RGB(31, 61, 0), RGB(31, 61, 0), RGB(31, 62, 0),
+    RGB(31, 62, 0), RGB(31, 62, 0), RGB(31, 62, 0), RGB(31, 63, 0),
+    RGB(31, 63, 0), RGB(31, 63, 1), RGB(31, 63, 1), RGB(31, 63, 2),
+    RGB(31, 63, 2), RGB(31, 63, 3), RGB(31, 63, 3), RGB(31, 63, 4),
+    RGB(31, 63, 4), RGB(31, 63, 5), RGB(31, 63, 5), RGB(31, 63, 5),
+    RGB(31, 63, 6), RGB(31, 63, 6), RGB(31, 63, 7), RGB(31, 63, 7),
+    RGB(31, 63, 8), RGB(31, 63, 8), RGB(31, 63, 9), RGB(31, 63, 9),
+    RGB(31, 63, 10), RGB(31, 63, 10), RGB(31, 63, 10), RGB(31, 63, 11),
+    RGB(31, 63, 11), RGB(31, 63, 12), RGB(31, 63, 12), RGB(31, 63, 13),
+    RGB(31, 63, 13), RGB(31, 63, 14), RGB(31, 63, 14), RGB(31, 63, 15),
+    RGB(31, 63, 15), RGB(31, 63, 15), RGB(31, 63, 16), RGB(31, 63, 16),
+    RGB(31, 63, 17), RGB(31, 63, 17), RGB(31, 63, 18), RGB(31, 63, 18),
+    RGB(31, 63, 19), RGB(31, 63, 19), RGB(31, 63, 20), RGB(31, 63, 20),
+    RGB(31, 63, 21), RGB(31, 63, 21), RGB(31, 63, 21), RGB(31, 63, 22),
+    RGB(31, 63, 22), RGB(31, 63, 23), RGB(31, 63, 23), RGB(31, 63, 24),
+    RGB(31, 63, 24), RGB(31, 63, 25), RGB(31, 63, 25), RGB(31, 63, 26),
+    RGB(31, 63, 26), RGB(31, 63, 26), RGB(31, 63, 27), RGB(31, 63, 27),
+    RGB(31, 63, 28), RGB(31, 63, 28), RGB(31, 63, 29), RGB(31, 63, 29),
+    RGB(31, 63, 30), RGB(31, 63, 30), RGB(31, 63, 31), RGB(31, 63, 31)};
 
 // declare the format of the screen
 using screen_t = screen<rgb_pixel<16>>;
@@ -107,23 +117,33 @@ screen_t anim_screen;
 uint8_t fire_buf[BUF_HEIGHT][BUF_WIDTH]; // VGA buffer, quarter resolution w/extra lines
 void fire_on_paint(screen_t::control_surface_type &destination, const srect16 &clip, void* state)
 {
-    rgb_pixel<16> col;
-    for (int y = clip.y1; y <= clip.y2; y+=2)
-    {
-        for (int x = clip.x1; x <= clip.x2; x+=2)
-        {
-            int i = y >> 2;
-            int j = x >> 2;
-            //destination.point(point16(x, y), fire_cols[fire_buf[i][j]]);
-            destination.fill(rect16(x,y,x+1,y+1),fire_cols[fire_buf[i][j]]);
+        for (int y = clip.y1; y <= clip.y2; ++y) {
+#ifdef USE_SPANS
+        // must use rgb_pixel<16>
+        static_assert(gfx::helpers::is_same<rgb_pixel<16>,typename screen_t::pixel_type>::value,"USE_SPANS only works with RGB565");
+        // get the spans for the current row
+        gfx_span row = destination.span(point16(clip.x1,y));
+        // get the pointer
+        uint16_t *prow = (uint16_t*)row.data;
+#endif
+
+            for (int x = clip.x1; x <= clip.x2; ++x) {
+                int i = y >> 2;
+                int j = x >> 2;
+                PAL_TYPE px = fire_cols[fire_buf[i][j]];
+ #ifdef USE_SPANS
+                *(prow++)=px;
+#else
+                destination.point(point16(x, y), px);
+#endif               
+            }
         }
-    }
 }
 
-using canvas_t = canvas<typename screen_t::control_surface_type>;
+using painter_t = painter<typename screen_t::control_surface_type>;
 
 // the controls
-static canvas_t fire_canvas(anim_screen);
+static painter_t fire_painter;
 
 // tell UIX the DMA transfer is complete
 static bool lcd_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
@@ -214,9 +234,9 @@ static void screen_init()
     anim_screen.buffer1(lcd_transfer_buffer1);
     anim_screen.buffer2(lcd_transfer_buffer2);
     const rgba_pixel<32> transparent(0, 0, 0, 0);
-    fire_canvas.bounds(anim_screen.bounds());
-    fire_canvas.on_paint_callback(fire_on_paint);
-    anim_screen.register_control(fire_canvas);
+    fire_painter.bounds(anim_screen.bounds());
+    fire_painter.on_paint_callback(fire_on_paint);
+    anim_screen.register_control(fire_painter);
     anim_screen.background_color(color_t::black);
     anim_screen.on_flush_callback(lcd_on_flush);
 }
@@ -344,7 +364,7 @@ void loop()
         total_ms = 0;
     }
 
-    fire_canvas.invalidate();
+    fire_painter.invalidate();
     ms = pdTICKS_TO_MS(xTaskGetTickCount());
     anim_screen.update();
     total_ms+=(pdTICKS_TO_MS(xTaskGetTickCount())-ms);
