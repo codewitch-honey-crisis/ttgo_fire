@@ -161,6 +161,7 @@ static void lcd_on_flush(const rect16 &bounds, const void *bmp, void *state)
 static void lcd_panel_init()
 {
     gpio_set_direction((gpio_num_t)4, GPIO_MODE_OUTPUT);
+    gpio_set_level((gpio_num_t)4,1);
     spi_bus_config_t buscfg;
     memset(&buscfg, 0, sizeof(buscfg));
     buscfg.sclk_io_num = 18;
@@ -279,11 +280,11 @@ extern "C" void app_main()
 #ifndef ARDUINO
     while(1) {
         loop();
-        /*static int count = 0;
+        static int count = 0;
         if(count++>6) {
             vTaskDelay(5);
             count = 0;
-        }*/
+        }
     }
 #endif
 }
@@ -346,7 +347,14 @@ void loop()
         fire_buf[BUF_HEIGHT - 1][j] = delta;
     }
     static uint32_t total_ms = 0;
-    ++frames;
+    bool pending = anim_screen.flush_pending();
+    if(!pending) {
+        fire_painter.invalidate();
+        ++frames;
+    }
+    ms = pdTICKS_TO_MS(xTaskGetTickCount());
+    anim_screen.update();
+    total_ms+=(pdTICKS_TO_MS(xTaskGetTickCount())-ms);
 
     if (ms > fps_ts + 1000)
     {
@@ -364,8 +372,5 @@ void loop()
         total_ms = 0;
     }
 
-    fire_painter.invalidate();
-    ms = pdTICKS_TO_MS(xTaskGetTickCount());
-    anim_screen.update();
-    total_ms+=(pdTICKS_TO_MS(xTaskGetTickCount())-ms);
+    
 }
