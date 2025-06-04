@@ -161,7 +161,7 @@ static void lcd_on_flush(const rect16 &bounds, const void *bmp, void *state)
 static void lcd_panel_init()
 {
     gpio_set_direction((gpio_num_t)4, GPIO_MODE_OUTPUT);
-    gpio_set_level((gpio_num_t)4,1);
+    //gpio_set_level((gpio_num_t)4,1);
     spi_bus_config_t buscfg;
     memset(&buscfg, 0, sizeof(buscfg));
     buscfg.sclk_io_num = 18;
@@ -278,13 +278,13 @@ extern "C" void app_main()
     screen_init();
 
 #ifndef ARDUINO
+    uint32_t ts = pdTICKS_TO_MS(xTaskGetTickCount());
     while(1) {
-        loop();
-        static int count = 0;
-        if(count++>6) {
+        if(pdTICKS_TO_MS(xTaskGetTickCount()>=ts+200)) {
+            ts = pdTICKS_TO_MS(xTaskGetTickCount());
             vTaskDelay(5);
-            count = 0;
         }
+        loop();
     }
 #endif
 }
@@ -298,57 +298,58 @@ void loop()
     uint32_t ms = pdTICKS_TO_MS(xTaskGetTickCount());
 
     unsigned int i, j, delta;    // looping variables, counters, and data
-    for (i = 1; i < BUF_HEIGHT; ++i)
-    {
-        for (j = 0; j < BUF_WIDTH; ++j)
-        {
-            if (j == 0)
-                fire_buf[i - 1][j] = (fire_buf[i][j] +
-                                fire_buf[i - 1][BUF_WIDTH - 1] +
-                                fire_buf[i][j + 1] +
-                                fire_buf[i + 1][j]) >>
-                                2;
-            else if (j == SCREEN_WIDTH/4-1)
-                fire_buf[i - 1][j] = (fire_buf[i][j] +
-                                fire_buf[i][j - 1] +
-                                fire_buf[i + 1][0] +
-                                fire_buf[i + 1][j]) >>
-                                2;
-            else
-                fire_buf[i - 1][j] = (fire_buf[i][j] +
-                                fire_buf[i][j - 1] +
-                                fire_buf[i][j + 1] +
-                                fire_buf[i + 1][j]) >>
-                                2;
-
-            if (fire_buf[i][j] > 11)
-                fire_buf[i][j] = fire_buf[i][j] - 12;
-            else if (fire_buf[i][j] > 3)
-                fire_buf[i][j] = fire_buf[i][j] - 4;
-            else
-            {
-                if (fire_buf[i][j] > 0)
-                    fire_buf[i][j]--;
-                if (fire_buf[i][j] > 0)
-                    fire_buf[i][j]--;
-                if (fire_buf[i][j] > 0)
-                    fire_buf[i][j]--;
-            }
-        }
-    }
-    delta = 0;
-    for (j = 0; j < BUF_WIDTH; j++)
-    {
-        if (rand() % 10 < 5)
-        {
-            delta = (rand() & 1) * 255;
-        }
-        fire_buf[BUF_HEIGHT - 2][j] = delta;
-        fire_buf[BUF_HEIGHT - 1][j] = delta;
-    }
     static uint32_t total_ms = 0;
     bool pending = anim_screen.flush_pending();
     if(!pending) {
+    
+        for (i = 1; i < BUF_HEIGHT; ++i)
+        {
+            for (j = 0; j < BUF_WIDTH; ++j)
+            {
+                if (j == 0)
+                    fire_buf[i - 1][j] = (fire_buf[i][j] +
+                                    fire_buf[i - 1][BUF_WIDTH - 1] +
+                                    fire_buf[i][j + 1] +
+                                    fire_buf[i + 1][j]) >>
+                                    2;
+                else if (j == SCREEN_WIDTH/4-1)
+                    fire_buf[i - 1][j] = (fire_buf[i][j] +
+                                    fire_buf[i][j - 1] +
+                                    fire_buf[i + 1][0] +
+                                    fire_buf[i + 1][j]) >>
+                                    2;
+                else
+                    fire_buf[i - 1][j] = (fire_buf[i][j] +
+                                    fire_buf[i][j - 1] +
+                                    fire_buf[i][j + 1] +
+                                    fire_buf[i + 1][j]) >>
+                                    2;
+
+                if (fire_buf[i][j] > 11)
+                    fire_buf[i][j] = fire_buf[i][j] - 12;
+                else if (fire_buf[i][j] > 3)
+                    fire_buf[i][j] = fire_buf[i][j] - 4;
+                else
+                {
+                    if (fire_buf[i][j] > 0)
+                        fire_buf[i][j]--;
+                    if (fire_buf[i][j] > 0)
+                        fire_buf[i][j]--;
+                    if (fire_buf[i][j] > 0)
+                        fire_buf[i][j]--;
+                }
+            }
+        }
+        delta = 0;
+        for (j = 0; j < BUF_WIDTH; j++)
+        {
+            if (rand() % 10 < 5)
+            {
+                delta = (rand() & 1) * 255;
+            }
+            fire_buf[BUF_HEIGHT - 2][j] = delta;
+            fire_buf[BUF_HEIGHT - 1][j] = delta;
+        }
         fire_painter.invalidate();
         ++frames;
     }
