@@ -12,8 +12,6 @@
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_vendor.h>
-#define VITE_SVG_IMPLEMENTATION
-#include "test.hpp"
 // this is the handle from the esp panel api
 static esp_lcd_panel_handle_t lcd_handle;
 #include <gfx.hpp>
