@@ -109,7 +109,7 @@ using color32_t = color<rgba_pixel<32>>;
 // UIX allows you to use two buffers for maximum DMA efficiency
 // you don't have to, but performance is significantly better
 // declare two buffers for transfer
-constexpr static const int lcd_buffer_size = bitmap<typename screen_t::pixel_type>::sizeof_buffer({SCREEN_WIDTH,SCREEN_HEIGHT/2});//32*1024;
+constexpr static const int lcd_buffer_size = bitmap<typename screen_t::pixel_type>::sizeof_buffer({SCREEN_WIDTH,SCREEN_HEIGHT/2});
 uint8_t *lcd_transfer_buffer1,*lcd_transfer_buffer2;
 
 // the main screen
@@ -275,7 +275,6 @@ extern "C" void app_main()
 {
     printf("ESP-IDF version %d.%d.%d\n",ESP_IDF_VERSION_MAJOR, ESP_IDF_VERSION_MINOR,ESP_IDF_VERSION_PATCH);
 #endif
-    puts((const char*)vite_svg.handle());
     lcd_panel_init();
 
     lcd_transfer_buffer1 = (uint8_t*)heap_caps_malloc(lcd_buffer_size,MALLOC_CAP_DMA);
