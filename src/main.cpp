@@ -12,6 +12,8 @@
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_vendor.h>
+#define VITE_SVG_IMPLEMENTATION
+#include "test.hpp"
 // this is the handle from the esp panel api
 static esp_lcd_panel_handle_t lcd_handle;
 #include <gfx.hpp>
@@ -117,27 +119,50 @@ screen_t anim_screen;
 uint8_t fire_buf[BUF_HEIGHT][BUF_WIDTH]; // VGA buffer, quarter resolution w/extra lines
 void fire_on_paint(screen_t::control_surface_type &destination, const srect16 &clip, void* state)
 {
-        for (int y = clip.y1; y <= clip.y2; ++y) {
-#ifdef USE_SPANS
-        // must use rgb_pixel<16>
+ #ifdef USE_SPANS
         static_assert(gfx::helpers::is_same<rgb_pixel<16>,typename screen_t::pixel_type>::value,"USE_SPANS only works with RGB565");
-        // get the spans for the current row
-        gfx_span row = destination.span(point16(clip.x1,y));
-        // get the pointer
-        uint16_t *prow = (uint16_t*)row.data;
-#endif
-
+        for (int y = clip.y1; y <= clip.y2; y+=2) {
+            // must use rgb_pixel<16>
+            // get the spans for the current partial rows (starting at clip.x1)
+            // note that we're getting two, because we draw 2x2 squares
+            // of all the same color.
+            gfx_span row = destination.span(point16(clip.x1,y));
+            gfx_span row2 = destination.span(point16(clip.x1,y+1));
+            // get the pointers to the partial row data
+            uint16_t *prow = (uint16_t*)row.data;
+            uint16_t *prow2 = (uint16_t*)row2.data;
+            for (int x = clip.x1; x <= clip.x2; x+=2) {
+                int i = y >> 2;
+                int j = x >> 2;
+                PAL_TYPE px = fire_cols[fire_buf[i][j]];
+                // set the pixels
+                *(prow++)=px;
+                // if the clip x ends on an odd value, we need to not set the pointer
+                // so check here
+                if(x-clip.x1+1<row.length) {
+                    *(prow++)=px;
+                }
+                // the clip y ends on an odd value prow2 will be null
+                if(prow2!=nullptr) {
+                    *(prow2++)=px;
+                    // another check for x if clip ends on an odd value
+                    if(x-clip.x1+1<row2.length) {
+                        *(prow2++)=px;
+                    }
+                }                
+            }
+        }
+#else 
+        for (int y = clip.y1; y <= clip.y2; ++y) {
             for (int x = clip.x1; x <= clip.x2; ++x) {
                 int i = y >> 2;
                 int j = x >> 2;
                 PAL_TYPE px = fire_cols[fire_buf[i][j]];
- #ifdef USE_SPANS
-                *(prow++)=px;
-#else
-                destination.point(point16(x, y), px);
-#endif               
+                // set the pixel
+                destination.point(point16(x,y),px);
             }
         }
+#endif               
 }
 
 using painter_t = painter<typename screen_t::control_surface_type>;
@@ -252,6 +277,7 @@ extern "C" void app_main()
 {
     printf("ESP-IDF version %d.%d.%d\n",ESP_IDF_VERSION_MAJOR, ESP_IDF_VERSION_MINOR,ESP_IDF_VERSION_PATCH);
 #endif
+    puts((const char*)vite_svg.handle());
     lcd_panel_init();
 
     lcd_transfer_buffer1 = (uint8_t*)heap_caps_malloc(lcd_buffer_size,MALLOC_CAP_DMA);
