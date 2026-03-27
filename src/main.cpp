@@ -1,6 +1,6 @@
 #define USE_SPANS
 #define FPS_FRAMES 100
-//#define BLUE_FLAME
+#define BLUE_FLAME
 #include <stdio.h>
 #include <stdlib.h>
 #include <freertos/FreeRTOS.h>
@@ -357,8 +357,8 @@ void loop()
 #ifdef HAS_INPUT
     update_input();
 #endif
-    uint32_t end_ms = pdTICKS_TO_MS(xTaskGetTickCount());
     if(!pending) {
+        uint32_t end_ms = pdTICKS_TO_MS(xTaskGetTickCount());
         render_stats_end(&stats,end_ms);
         static uint32_t fps_ts = 0;
         render_stats_t rep;
