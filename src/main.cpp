@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <esp_random.h>
 #include "gfx.hpp"
 #include "uix.hpp"
 #include "panel.h"
@@ -336,9 +337,9 @@ void loop()
         delta = 0;
         for (j = 0; j < BUF_WIDTH; j++)
         {
-            if (rand() % 10 < 5)
+            if (esp_random() % 10 < 5)
             {
-                delta = (rand() & 1) * 255;
+                delta = (esp_random() & 1) * 255;
             }
             fire_buf[BUF_HEIGHT - 2][j] = delta;
             fire_buf[BUF_HEIGHT - 1][j] = delta;
