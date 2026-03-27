@@ -109,6 +109,8 @@ using color_t = color<typename screen_t::pixel_type>;
 // for access to RGB8888 colors which controls use
 using color32_t = color<rgba_pixel<32>>;
 static tt_font text_font(telegrama,LCD_HEIGHT/10,font_size_units::px);
+static font_measure_cache text_measure_cache;
+static font_draw_cache text_draw_cache;
 // the main screen
 static screen_t anim_screen;
 static uint8_t fire_buf[BUF_HEIGHT][BUF_WIDTH]; // VGA buffer, quarter resolution w/extra lines
@@ -166,7 +168,7 @@ static void fire_on_paint(screen_t::control_surface_type &destination, const sre
         if(clip.intersects(fps_rect)) {
             static char fps_text[64];
             snprintf(fps_text,sizeof(fps_text),"fps: %d",fps);
-            text_info ti(fps_text,text_font);
+            text_info ti(fps_text,text_font,4,text_encoding::utf8,&text_measure_cache,&text_draw_cache);
 #ifdef BLUE_FLAME
             static const auto fps_col = color_t::red;
 #else
@@ -266,6 +268,11 @@ extern "C" void app_main()
         puts("OUT OF MEMORY");
         esp_restart();
     }
+    text_measure_cache.max_entries(20);
+    text_measure_cache.initialize();
+    text_draw_cache.max_entries(20);
+    text_draw_cache.initialize();
+
     for (int i = 0; i < BUF_HEIGHT; i++) {
         for (int j = 0; j < BUF_WIDTH; j++) {
             fire_buf[i][j] = 0;
