@@ -182,7 +182,9 @@ void loop();
 extern "C" void app_main() 
 {
     printf("ESP-IDF version %d.%d.%d\n",ESP_IDF_VERSION_MAJOR, ESP_IDF_VERSION_MINOR,ESP_IDF_VERSION_PATCH);
-
+#ifdef POWER
+    panel_power_init();
+#endif
     panel_lcd_init();
 
     for (int i = 0; i < BUF_HEIGHT; i++) {

@@ -5,3 +5,4 @@
 .vscode/ipch
 .vscode/extensions.json
 .vscode/*
+sdkconfig.m5stack-core2.old
