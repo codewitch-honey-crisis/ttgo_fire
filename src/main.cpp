@@ -16,11 +16,19 @@ constexpr static const size_t BUF_HEIGHT = ((LCD_HEIGHT / 4) + 6);
 #ifdef USE_SPANS
 #define PAL_TYPE uint16_t
 // store preswapped uint16_ts for performance
+#ifdef BLUE_FLAME
+#define RGB(r,g,b) (bits::swap(rgb_pixel<16>(b,g,r)))
+#else
 #define RGB(r,g,b) (bits::swap(rgb_pixel<16>(r,g,b)))
+#endif
 #else
 // store rgb_pixel<16> instances
 #define PAL_TYPE rgb_pixel<16>
+#ifdef BLUE_FLAME
+#define RGB(r,g,b) rgb_pixel<16>(b,g,r)
+#else
 #define RGB(r,g,b) rgb_pixel<16>(r,g,b)
+#endif
 #endif
 
 // VGA color palette for flames
@@ -192,15 +200,7 @@ extern "C" void app_main()
             fire_buf[i][j] = 0;
         }
     }
-#ifdef BLUE_FLAME
-    for(int i = 0;i<256;++i) {
-        auto px = fire_cols[i];
-        auto tmp = px.template channel<channel_name::R>();
-        px.template channel<channel_name::R>(px.template channel<channel_name::B>());
-        px.template channel<channel_name::B>(tmp);
-        fire_cols[i]=px;
-    }
-#endif
+
     // for rendering statistics
     render_stats_init(&stats,stats_interval_buffer,stats_duration_buffer,1000);
     // init the UI screen
