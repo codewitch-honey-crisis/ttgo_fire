@@ -1,28 +1,18 @@
 #define USE_SPANS
-#if __has_include(<Arduino.h>)
-#include <Arduino.h>
-#endif
 //#define BLUE_FLAME
 #include <stdio.h>
 #include <stdlib.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include <driver/gpio.h>
-#include <driver/spi_master.h>
-#include <esp_lcd_panel_io.h>
-#include <esp_lcd_panel_ops.h>
-#include <esp_lcd_panel_vendor.h>
-// this is the handle from the esp panel api
-static esp_lcd_panel_handle_t lcd_handle;
-#include <gfx.hpp>
-#include <uix.hpp>
+#include "gfx.hpp"
+#include "uix.hpp"
+#include "panel.h"
+#include "render_stats.h"
 using namespace gfx;
 using namespace uix;
 using color_t = gfx::color<typename gfx::rgb_pixel<16>>;
-#define SCREEN_WIDTH 240
-#define SCREEN_HEIGHT 135
-constexpr static const size_t BUF_WIDTH = (SCREEN_WIDTH / 4);
-constexpr static const size_t BUF_HEIGHT = ((SCREEN_HEIGHT / 4) + 6);
+constexpr static const size_t BUF_WIDTH = (LCD_WIDTH/ 4);
+constexpr static const size_t BUF_HEIGHT = ((LCD_HEIGHT / 4) + 6);
 #ifdef USE_SPANS
 #define PAL_TYPE uint16_t
 // store preswapped uint16_ts for performance
@@ -106,12 +96,6 @@ using color_t = color<typename screen_t::pixel_type>;
 // for access to RGB8888 colors which controls use
 using color32_t = color<rgba_pixel<32>>;
 
-// UIX allows you to use two buffers for maximum DMA efficiency
-// you don't have to, but performance is significantly better
-// declare two buffers for transfer
-constexpr static const int lcd_buffer_size = bitmap<typename screen_t::pixel_type>::sizeof_buffer({SCREEN_WIDTH,SCREEN_HEIGHT/2});
-uint8_t *lcd_transfer_buffer1,*lcd_transfer_buffer2;
-
 // the main screen
 screen_t anim_screen;
 uint8_t fire_buf[BUF_HEIGHT][BUF_WIDTH]; // VGA buffer, quarter resolution w/extra lines
@@ -169,120 +153,38 @@ using painter_t = painter<typename screen_t::control_surface_type>;
 static painter_t fire_painter;
 
 // tell UIX the DMA transfer is complete
-static bool lcd_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
+void panel_lcd_flush_complete()
 {
     anim_screen.flush_complete();
-    return true;
 }
-// tell the lcd panel api to transfer data via DMA
-static void lcd_on_flush(const rect16 &bounds, const void *bmp, void *state)
-{
-    int x1 = bounds.x1, y1 = bounds.y1, x2 = bounds.x2 + 1, y2 = bounds.y2 + 1;
-    esp_lcd_panel_draw_bitmap(lcd_handle, x1, y1, x2, y2, (void *)bmp);
+static uint32_t stats_interval_buffer[1000];
+static uint32_t stats_duration_buffer[1000];
+static render_stats_info_t stats;
+static void uix_on_flush(const rect16& bounds, const void* bitmap, void* state) {
+    panel_lcd_flush(bounds.x1,bounds.y1,bounds.x2,bounds.y2,(void*)bitmap);
 }
-// initialize the screen using the esp panel API
-static void lcd_panel_init()
-{
-    gpio_set_direction((gpio_num_t)4, GPIO_MODE_OUTPUT);
-    //gpio_set_level((gpio_num_t)4,1);
-    spi_bus_config_t buscfg;
-    memset(&buscfg, 0, sizeof(buscfg));
-    buscfg.sclk_io_num = 18;
-    buscfg.mosi_io_num = 19;
-    buscfg.miso_io_num = -1;
-    buscfg.quadwp_io_num = -1;
-    buscfg.quadhd_io_num = -1;
-    buscfg.max_transfer_sz = sizeof(lcd_buffer_size) + 8;
-
-    // Initialize the SPI bus on VSPI (SPI3)
-    spi_bus_initialize(SPI3_HOST, &buscfg, SPI_DMA_CH_AUTO);
-
-    esp_lcd_panel_io_handle_t io_handle = NULL;
-    esp_lcd_panel_io_spi_config_t io_config;
-    memset(&io_config, 0, sizeof(io_config));
-    io_config.dc_gpio_num = 16,
-    io_config.cs_gpio_num = 5,
-    io_config.pclk_hz = 40 * 1000 * 1000,
-    io_config.lcd_cmd_bits = 8,
-    io_config.lcd_param_bits = 8,
-    io_config.spi_mode = 0,
-    io_config.trans_queue_depth = 10,
-    io_config.on_color_trans_done = lcd_flush_ready;
-    // Attach the LCD to the SPI bus
-    esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)SPI3_HOST, &io_config, &io_handle);
-
-    lcd_handle = NULL;
-    esp_lcd_panel_dev_config_t panel_config;
-    memset(&panel_config, 0, sizeof(panel_config));
-    panel_config.reset_gpio_num = 23;
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
-    panel_config.rgb_endian = LCD_RGB_ENDIAN_RGB;
-#else
-    panel_config.color_space = ESP_LCD_COLOR_SPACE_RGB;
-#endif
-    panel_config.bits_per_pixel = 16;
-
-    // Initialize the LCD configuration
-    esp_lcd_new_panel_st7789(io_handle, &panel_config, &lcd_handle);
-
-    // Turn off backlight to avoid unpredictable display on the LCD screen while initializing
-    // the LCD panel driver. (Different LCD screens may need different levels)
-    gpio_set_level((gpio_num_t)4, 0);
-    // Reset the display
-    esp_lcd_panel_reset(lcd_handle);
-
-    // Initialize LCD panel
-    esp_lcd_panel_init(lcd_handle);
-    // esp_lcd_panel_io_tx_param(io_handle, LCD_CMD_SLPOUT, NULL, 0);
-    //  Swap x and y axis (Different LCD screens may need different options)
-    esp_lcd_panel_swap_xy(lcd_handle, true);
-    esp_lcd_panel_set_gap(lcd_handle, 40, 52);
-    esp_lcd_panel_mirror(lcd_handle, false, true);
-    esp_lcd_panel_invert_color(lcd_handle, true);
-    // Turn on the screen
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
-    esp_lcd_panel_disp_on_off(lcd_handle, true);
-#else
-    esp_lcd_panel_disp_off(lcd_handle, false);
-#endif
-    // Turn on backlight (Different LCD screens may need different levels)
-    gpio_set_level((gpio_num_t)4, 1);
-}
-
-
 // initialize the screens and controls
 static void screen_init()
 {
-    anim_screen.dimensions(ssize16(SCREEN_WIDTH,SCREEN_HEIGHT));
-    anim_screen.buffer_size(lcd_buffer_size);
-    anim_screen.buffer1(lcd_transfer_buffer1);
-    anim_screen.buffer2(lcd_transfer_buffer2);
+    anim_screen.dimensions(ssize16(LCD_WIDTH,LCD_HEIGHT));
+    anim_screen.buffer_size(LCD_TRANSFER_SIZE);
+    anim_screen.buffer1((uint8_t*)panel_lcd_transfer_buffer());
+    anim_screen.buffer2((uint8_t*)panel_lcd_transfer_buffer2());
     const rgba_pixel<32> transparent(0, 0, 0, 0);
     fire_painter.bounds(anim_screen.bounds());
     fire_painter.on_paint_callback(fire_on_paint);
     anim_screen.register_control(fire_painter);
     anim_screen.background_color(color_t::black);
-    anim_screen.on_flush_callback(lcd_on_flush);
+    anim_screen.on_flush_callback(uix_on_flush);
 }
-#ifdef ARDUINO
-void setup()
-{
-    Serial.begin(115200);
-    Serial.printf("Arduino version: %d.%d.%d\n",ESP_ARDUINO_VERSION_MAJOR,ESP_ARDUINO_VERSION_MINOR,ESP_ARDUINO_VERSION_PATCH);
-#else
+
 void loop();
 extern "C" void app_main() 
 {
     printf("ESP-IDF version %d.%d.%d\n",ESP_IDF_VERSION_MAJOR, ESP_IDF_VERSION_MINOR,ESP_IDF_VERSION_PATCH);
-#endif
-    lcd_panel_init();
 
-    lcd_transfer_buffer1 = (uint8_t*)heap_caps_malloc(lcd_buffer_size,MALLOC_CAP_DMA);
-    lcd_transfer_buffer2 = (uint8_t*)heap_caps_malloc(lcd_buffer_size,MALLOC_CAP_DMA);
-    if(lcd_transfer_buffer1==nullptr||lcd_transfer_buffer2==nullptr) {
-        printf("Out of memory");
-        while(1);
-    }
+    panel_lcd_init();
+
     for (int i = 0; i < BUF_HEIGHT; i++) {
         for (int j = 0; j < BUF_WIDTH; j++) {
             fire_buf[i][j] = 0;
@@ -297,10 +199,11 @@ extern "C" void app_main()
         fire_cols[i]=px;
     }
 #endif
+    // for rendering statistics
+    render_stats_init(&stats,stats_interval_buffer,stats_duration_buffer,1000);
     // init the UI screen
     screen_init();
 
-#ifndef ARDUINO
     uint32_t ts = pdTICKS_TO_MS(xTaskGetTickCount());
     while(1) {
         if(pdTICKS_TO_MS(xTaskGetTickCount()>=ts+200)) {
@@ -309,22 +212,17 @@ extern "C" void app_main()
         }
         loop();
     }
-#endif
 }
 
 void loop()
 {
-    static int frames = 0;
-    static char szfps[64];
-    static uint32_t fps_ts = 0;
-    static int old_frames = 0;
-    uint32_t ms = pdTICKS_TO_MS(xTaskGetTickCount());
-
-    unsigned int i, j, delta;    // looping variables, counters, and data
-    static uint32_t total_ms = 0;
-    bool pending = anim_screen.flush_pending();
-    if(!pending) {
     
+    unsigned int i, j, delta;    // looping variables, counters, and data
+    bool pending = anim_screen.flush_pending();
+    uint32_t start_ms;
+    if(!pending) {
+        start_ms = pdTICKS_TO_MS(xTaskGetTickCount());
+        render_stats_start(&stats,start_ms);
         for (i = 1; i < BUF_HEIGHT; ++i)
         {
             for (j = 0; j < BUF_WIDTH; ++j)
@@ -335,7 +233,7 @@ void loop()
                                     fire_buf[i][j + 1] +
                                     fire_buf[i + 1][j]) >>
                                     2;
-                else if (j == SCREEN_WIDTH/4-1)
+                else if (j == BUF_WIDTH-1)
                     fire_buf[i - 1][j] = (fire_buf[i][j] +
                                     fire_buf[i][j - 1] +
                                     fire_buf[i + 1][0] +
@@ -374,27 +272,35 @@ void loop()
             fire_buf[BUF_HEIGHT - 1][j] = delta;
         }
         fire_painter.invalidate();
-        ++frames;
     }
-    ms = pdTICKS_TO_MS(xTaskGetTickCount());
     anim_screen.update();
-    total_ms+=(pdTICKS_TO_MS(xTaskGetTickCount())-ms);
-
-    if (ms > fps_ts + 1000)
-    {
-        fps_ts = ms;
-        if(old_frames!=frames) {
-            old_frames = frames;
-            if(frames==0) {
-                snprintf(szfps, sizeof(szfps), "fps: < 1, total: %d ms",(int)total_ms);
-            } else {
-                snprintf(szfps, sizeof(szfps), "fps: %d, avg: %d ms", (int)frames,(int)total_ms/frames);
-            }
+    uint32_t end_ms = pdTICKS_TO_MS(xTaskGetTickCount());
+    if(!pending) {
+        render_stats_end(&stats,end_ms);
+        static uint32_t fps_ts = 0;
+        render_stats_t rep;
+        if (end_ms > fps_ts + 1000 && render_stats_report(&stats,&rep))
+        {
+            fps_ts = end_ms;
+            float render_time_per_frame = 1000.f/rep.avg_fps;
+            float avg_cpu_time = 100.f*(rep.avg_render_ms/(render_time_per_frame-rep.avg_render_ms));
+            printf(
+                "avg fps: %0.1f\n"
+                "1%% lows: %0.1f\n"
+                "avg render time: %0.1fms\n"
+                "min render time: %0.1fms\n"
+                "max render time: %0.1fms\n"
+                "avg time per frame: %0.1fms\n"
+                "avg cpu time: %0.1f%%\n"
+                "\n",
+                rep.avg_fps,
+                rep.one_pct_low_fps,
+                rep.avg_render_ms,
+                rep.min_render_ms,
+                rep.max_render_ms,
+                render_time_per_frame,
+                avg_cpu_time
+            );
         }
-        puts(szfps);
-        frames = 0;
-        total_ms = 0;
     }
-
-    
 }
