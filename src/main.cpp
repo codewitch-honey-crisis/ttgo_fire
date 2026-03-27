@@ -1,4 +1,5 @@
 #define USE_SPANS
+#define FPS_FRAMES 100
 //#define BLUE_FLAME
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,6 +9,9 @@
 #include "uix.hpp"
 #include "panel.h"
 #include "render_stats.h"
+#define TELEGRAMA_IMPLEMENTATION
+#include "telegrama.hpp"
+#undef TELEGRAMA_IMPLEMENTATION
 using namespace gfx;
 using namespace uix;
 using color_t = gfx::color<typename gfx::rgb_pixel<16>>;
@@ -103,11 +107,13 @@ using screen_t = screen<rgb_pixel<16>>;
 using color_t = color<typename screen_t::pixel_type>;
 // for access to RGB8888 colors which controls use
 using color32_t = color<rgba_pixel<32>>;
-
+static tt_font text_font(telegrama,LCD_HEIGHT/10,font_size_units::px);
 // the main screen
-screen_t anim_screen;
-uint8_t fire_buf[BUF_HEIGHT][BUF_WIDTH]; // VGA buffer, quarter resolution w/extra lines
-void fire_on_paint(screen_t::control_surface_type &destination, const srect16 &clip, void* state)
+static screen_t anim_screen;
+static uint8_t fire_buf[BUF_HEIGHT][BUF_WIDTH]; // VGA buffer, quarter resolution w/extra lines
+static int fps = 0;
+static bool show_fps = false;
+static void fire_on_paint(screen_t::control_surface_type &destination, const srect16 &clip, void* state)
 {
  #ifdef USE_SPANS
         static_assert(gfx::helpers::is_same<rgb_pixel<16>,typename screen_t::pixel_type>::value,"USE_SPANS only works with RGB565");
@@ -152,7 +158,22 @@ void fire_on_paint(screen_t::control_surface_type &destination, const srect16 &c
                 destination.point(point16(x,y),px);
             }
         }
-#endif               
+#endif   
+    if(show_fps) {
+        static const int16_t y1 = LCD_HEIGHT-(LCD_HEIGHT/10) - 2;
+        static const srect16 fps_rect(2,y1,LCD_WIDTH-3,y1+(LCD_HEIGHT/10));
+        if(clip.intersects(fps_rect)) {
+            static char fps_text[64];
+            snprintf(fps_text,sizeof(fps_text),"fps: %d",fps);
+            text_info ti(fps_text,text_font);
+#ifdef BLUE_FLAME
+            static const auto fps_col = color_t::red;
+#else
+           static const auto fps_col = color_t::blue;
+#endif
+            draw::text(destination,fps_rect,ti,fps_col);
+        }
+    }
 }
 
 using painter_t = painter<typename screen_t::control_surface_type>;
@@ -165,12 +186,44 @@ void panel_lcd_flush_complete()
 {
     anim_screen.flush_complete();
 }
-static uint32_t stats_interval_buffer[1000];
-static uint32_t stats_duration_buffer[1000];
+static uint32_t stats_interval_buffer[FPS_FRAMES];
+static uint32_t stats_duration_buffer[FPS_FRAMES];
 static render_stats_info_t stats;
 static void uix_on_flush(const rect16& bounds, const void* bitmap, void* state) {
     panel_lcd_flush(bounds.x1,bounds.y1,bounds.x2,bounds.y2,(void*)bitmap);
 }
+#if defined(TOUCH_BUS) || defined(BUTTON)
+#define HAS_INPUT
+static TickType_t pressed = 0;
+static void update_input() {
+#ifdef TOUCH_BUS
+    panel_touch_update();
+    uint16_t x,y,s;
+    size_t count = 1;
+    panel_touch_read_raw(&count,&x,&y,&s);
+    if(count>0) {
+        if(pressed==0) {
+            pressed = xTaskGetTickCount();
+        }
+    } else if(pressed>0) {
+        show_fps = !show_fps;
+        pressed = 0;
+    }
+#endif
+#ifdef BUTTON
+    if(panel_button_read_all()) {
+        if(pressed==0) {
+            pressed = xTaskGetTickCount();
+        }
+    } else {
+        if(pressed>0) {
+            show_fps = !show_fps;
+            pressed = 0;
+        }
+    }
+#endif
+}
+#endif
 // initialize the screens and controls
 static void screen_init()
 {
@@ -190,11 +243,28 @@ void loop();
 extern "C" void app_main() 
 {
     printf("ESP-IDF version %d.%d.%d\n",ESP_IDF_VERSION_MAJOR, ESP_IDF_VERSION_MINOR,ESP_IDF_VERSION_PATCH);
+
+#ifdef BUTTON
+    panel_button_init();
+#endif
 #ifdef POWER
     panel_power_init();
 #endif
+#ifdef EXPANDER_BUS
+    panel_expander_init();
+#endif
     panel_lcd_init();
+#ifdef TOUCH_BUS
+    panel_touch_init();
+#endif
+#ifdef LCD_BCKL_PWM
+    panel_lcd_backlight(64);
+#endif
 
+    if(gfx_result::success!=text_font.initialize()) {
+        puts("OUT OF MEMORY");
+        esp_restart();
+    }
     for (int i = 0; i < BUF_HEIGHT; i++) {
         for (int j = 0; j < BUF_WIDTH; j++) {
             fire_buf[i][j] = 0;
@@ -202,7 +272,7 @@ extern "C" void app_main()
     }
 
     // for rendering statistics
-    render_stats_init(&stats,stats_interval_buffer,stats_duration_buffer,1000);
+    render_stats_init(&stats,stats_interval_buffer,stats_duration_buffer,FPS_FRAMES);
     // init the UI screen
     screen_init();
 
@@ -276,6 +346,9 @@ void loop()
         fire_painter.invalidate();
     }
     anim_screen.update();
+#ifdef HAS_INPUT
+    update_input();
+#endif
     uint32_t end_ms = pdTICKS_TO_MS(xTaskGetTickCount());
     if(!pending) {
         render_stats_end(&stats,end_ms);
@@ -285,7 +358,6 @@ void loop()
         {
             fps_ts = end_ms;
             float render_time_per_frame = 1000.f/rep.avg_fps;
-            float avg_cpu_time = 100.f*(rep.avg_render_ms/(render_time_per_frame-rep.avg_render_ms));
             printf(
                 "avg fps: %0.1f\n"
                 "1%% lows: %0.1f\n"
@@ -293,16 +365,15 @@ void loop()
                 "min render time: %0.1fms\n"
                 "max render time: %0.1fms\n"
                 "avg time per frame: %0.1fms\n"
-                "avg cpu time: %0.1f%%\n"
                 "\n",
                 rep.avg_fps,
                 rep.one_pct_low_fps,
                 rep.avg_render_ms,
                 rep.min_render_ms,
                 rep.max_render_ms,
-                render_time_per_frame,
-                avg_cpu_time
+                render_time_per_frame
             );
+            fps = rep.avg_fps;
         }
     }
 }
