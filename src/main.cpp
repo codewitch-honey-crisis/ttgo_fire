@@ -381,7 +381,7 @@ void loop()
                 rep.max_render_ms,
                 render_time_per_frame
             );
-            fps = rep.avg_fps;
+            fps = roundf(rep.avg_fps);
         }
     }
 }
