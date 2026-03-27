@@ -7,3 +7,4 @@
 .vscode/*
 sdkconfig.m5stack-core2.old
 sdkconfig.ttgo-t1-esp-idf.old
+sdkconfig.ttgo-t1.old
