@@ -137,48 +137,48 @@ static bool cpu_stamp_needed = false;
 static void fire_on_paint(screen_t::control_surface_type &destination, const srect16 &clip, void* state)
 {
  #ifdef USE_SPANS
-        static_assert(gfx::helpers::is_same<rgb_pixel<16>,typename screen_t::pixel_type>::value,"USE_SPANS only works with RGB565");
-        for (int y = clip.y1; y <= clip.y2; y+=2) {
-            // must use rgb_pixel<16>
-            // get the spans for the current partial rows (starting at clip.x1)
-            // note that we're getting two, because we draw 2x2 squares
-            // of all the same color.
-            gfx_span row = destination.span(point16(clip.x1,y));
-            gfx_span row2 = destination.span(point16(clip.x1,y+1));
-            // get the pointers to the partial row data
-            uint16_t *prow = (uint16_t*)row.data;
-            uint16_t *prow2 = (uint16_t*)row2.data;
-            for (int x = clip.x1; x <= clip.x2; x+=2) {
-                int i = y >> 2;
-                int j = x >> 2;
-                PAL_TYPE px = fire_cols[buffer[i][j]];
-                // set the pixels
+    static_assert(gfx::helpers::is_same<rgb_pixel<16>,typename screen_t::pixel_type>::value,"USE_SPANS only works with RGB565");
+    for (int y = clip.y1; y <= clip.y2; y+=2) {
+        // must use rgb_pixel<16>
+        // get the spans for the current partial rows (starting at clip.x1)
+        // note that we're getting two, because we draw 2x2 squares
+        // of all the same color.
+        gfx_span row = destination.span(point16(clip.x1,y));
+        gfx_span row2 = destination.span(point16(clip.x1,y+1));
+        // get the pointers to the partial row data
+        uint16_t *prow = (uint16_t*)row.data;
+        uint16_t *prow2 = (uint16_t*)row2.data;
+        for (int x = clip.x1; x <= clip.x2; x+=2) {
+            int i = y >> 2;
+            int j = x >> 2;
+            PAL_TYPE px = fire_cols[buffer[i][j]];
+            // set the pixels
+            *(prow++)=px;
+            // if the clip x ends on an odd value, we need to not set the pointer
+            // so check here
+            if(x-clip.x1+1<row.length) {
                 *(prow++)=px;
-                // if the clip x ends on an odd value, we need to not set the pointer
-                // so check here
-                if(x-clip.x1+1<row.length) {
-                    *(prow++)=px;
-                }
-                // the clip y ends on an odd value prow2 will be null
-                if(prow2!=nullptr) {
+            }
+            // the clip y ends on an odd value prow2 will be null
+            if(prow2!=nullptr) {
+                *(prow2++)=px;
+                // another check for x if clip ends on an odd value
+                if(x-clip.x1+1<row2.length) {
                     *(prow2++)=px;
-                    // another check for x if clip ends on an odd value
-                    if(x-clip.x1+1<row2.length) {
-                        *(prow2++)=px;
-                    }
-                }                
-            }
+                }
+            }                
         }
+    }
 #else 
-        for (int y = clip.y1; y <= clip.y2; ++y) {
-            for (int x = clip.x1; x <= clip.x2; ++x) {
-                int i = y >> 2;
-                int j = x >> 2;
-                PAL_TYPE px = fire_cols[buffer[i][j]];
-                // set the pixel
-                destination.point(point16(x,y),px);
-            }
+    for (int y = clip.y1; y <= clip.y2; ++y) {
+        for (int x = clip.x1; x <= clip.x2; ++x) {
+            int i = y >> 2;
+            int j = x >> 2;
+            PAL_TYPE px = fire_cols[buffer[i][j]];
+            // set the pixel
+            destination.point(point16(x,y),px);
         }
+    }
 #endif   
     if(show_fps) {
         static const int16_t y1 = LCD_HEIGHT-(LCD_HEIGHT/10) - 2;
