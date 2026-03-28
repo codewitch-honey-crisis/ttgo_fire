@@ -267,6 +267,19 @@ static void screen_init()
 }
 
 void loop();
+void loop_task(void* arg) {
+    TickType_t ts = xTaskGetTickCount();
+    static const TickType_t delay = pdMS_TO_TICKS(200);
+    while(1) {
+        // ping the wdt so it doesn't get lonely
+        TickType_t new_ts = xTaskGetTickCount();
+        if(new_ts >= ts + delay) {
+            ts = new_ts;
+            vTaskDelay(5);
+        }
+        loop();
+    }
+}
 extern "C" void app_main() 
 {
     printf("ESP-IDF version %d.%d.%d\n",ESP_IDF_VERSION_MAJOR, ESP_IDF_VERSION_MINOR,ESP_IDF_VERSION_PATCH);
@@ -304,14 +317,8 @@ extern "C" void app_main()
     // init the UI screen
     screen_init();
 
-    uint32_t ts = pdTICKS_TO_MS(xTaskGetTickCount());
-    while(1) {
-        if(pdTICKS_TO_MS(xTaskGetTickCount())>=ts+200) {
-            ts = pdTICKS_TO_MS(xTaskGetTickCount());
-            vTaskDelay(5);
-        }
-        loop();
-    }
+    TaskHandle_t handle;
+    xTaskCreate(loop_task,"loop_task",8192,nullptr,uxTaskPriorityGet(NULL),&handle);
 }
 
 void loop()
