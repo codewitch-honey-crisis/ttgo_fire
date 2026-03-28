@@ -128,6 +128,7 @@ static uint32_t start_render_ms = 0;
 static volatile uint32_t end_render_ms = 0;
 static uint32_t cpu_time_accum = 0;
 static int cpu_time_count = 0;
+static uint32_t fps_ts = 0;
 // set true once we've called render_stats_start for a frame
 // and are waiting for the final flush to complete
 static volatile bool render_pending = false;
@@ -339,7 +340,6 @@ void loop()
                 render_stats_end(&stats, ems);
                 end_render_ms = 0;
                 render_pending = false;
-                static uint32_t fps_ts = 0;
                 render_stats_t rep;
                 if (ems > fps_ts + 1000 && render_stats_report(&stats,&rep))
                 {
