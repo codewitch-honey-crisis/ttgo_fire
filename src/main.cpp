@@ -260,7 +260,6 @@ static void screen_init()
     anim_screen.buffer_size(LCD_TRANSFER_SIZE);
     anim_screen.buffer1((uint8_t*)panel_lcd_transfer_buffer());
     anim_screen.buffer2((uint8_t*)panel_lcd_transfer_buffer2());
-    const rgba_pixel<32> transparent(0, 0, 0, 0);
     fire_painter.bounds(anim_screen.bounds());
     fire_painter.on_paint_callback(fire_on_paint);
     anim_screen.register_control(fire_painter);
