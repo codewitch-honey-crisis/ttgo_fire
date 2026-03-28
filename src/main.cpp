@@ -1,5 +1,9 @@
+// spans allow for direct bitmap memory
+// manipulation for improved efficiency
 #define USE_SPANS
+// number of frames to keep for perf metrics
 #define FPS_FRAMES 100
+// make the flames blue instead of red/orange
 //#define BLUE_FLAME
 #include <stdio.h>
 #include <stdlib.h>
