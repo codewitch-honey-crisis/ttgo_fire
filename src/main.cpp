@@ -116,6 +116,11 @@ static screen_t anim_screen;
 static uint8_t fire_buf[BUF_HEIGHT][BUF_WIDTH]; // VGA buffer, quarter resolution w/extra lines
 static int fps = 0;
 static bool show_fps = false;
+static uint32_t start_render_ms = 0;
+static volatile uint32_t end_render_ms = 0;
+// set true once we've called render_stats_start for a frame
+// and are waiting for the final flush to complete
+static volatile bool render_pending = false;
 static void fire_on_paint(screen_t::control_surface_type &destination, const srect16 &clip, void* state)
 {
  #ifdef USE_SPANS
@@ -188,6 +193,9 @@ static painter_t fire_painter;
 void panel_lcd_flush_complete()
 {
     anim_screen.flush_complete();
+    // always overwrite - if there are multiple flushes per frame,
+    // we want the timestamp of the LAST one
+    end_render_ms = pdTICKS_TO_MS(xTaskGetTickCountFromISR());
 }
 static uint32_t stats_interval_buffer[FPS_FRAMES];
 static uint32_t stats_duration_buffer[FPS_FRAMES];
@@ -286,7 +294,7 @@ extern "C" void app_main()
 
     uint32_t ts = pdTICKS_TO_MS(xTaskGetTickCount());
     while(1) {
-        if(pdTICKS_TO_MS(xTaskGetTickCount()>=ts+200)) {
+        if(pdTICKS_TO_MS(xTaskGetTickCount())>=ts+200) {
             ts = pdTICKS_TO_MS(xTaskGetTickCount());
             vTaskDelay(5);
         }
@@ -299,10 +307,48 @@ void loop()
     
     unsigned int i, j, delta;    // looping variables, counters, and data
     bool pending = anim_screen.flush_pending();
-    uint32_t start_ms;
     if(!pending) {
-        start_ms = pdTICKS_TO_MS(xTaskGetTickCount());
-        render_stats_start(&stats,start_ms);
+        // if we were waiting for DMA to finish, grab the end timestamp
+        // BEFORE starting the next frame's timing. This ensures the
+        // start/end pair fed to render_stats belongs to the same frame.
+        if(render_pending) {
+            // end_render_ms was set by the ISR (possibly multiple times
+            // if UIX split the frame into multiple DMA chunks - we want
+            // the last one, which is what's sitting in end_render_ms now)
+            uint32_t ems = end_render_ms;
+            if(ems != 0) {
+                render_stats_end(&stats, ems);
+                end_render_ms = 0;
+                render_pending = false;
+                static uint32_t fps_ts = 0;
+                render_stats_t rep;
+                if (ems > fps_ts + 1000 && render_stats_report(&stats,&rep))
+                {
+                    fps_ts = ems;
+                    float render_time_per_frame = 1000.f/rep.avg_fps;
+                    printf(
+                        "avg fps: %0.1f\n"
+                        "1%% lows: %0.1f\n"
+                        "avg render time: %0.1fms\n"
+                        "min render time: %0.1fms\n"
+                        "max render time: %0.1fms\n"
+                        "avg time per frame: %0.1fms\n"
+                        "\n",
+                        rep.avg_fps,
+                        rep.one_pct_low_fps,
+                        rep.avg_render_ms,
+                        rep.min_render_ms,
+                        rep.max_render_ms,
+                        render_time_per_frame
+                    );
+                    fps = roundf(rep.avg_fps);
+                }
+            }
+        }
+        // now start timing the new frame
+        start_render_ms = pdTICKS_TO_MS(xTaskGetTickCount());
+        render_stats_start(&stats, start_render_ms);
+        render_pending = true;
         for (i = 1; i < BUF_HEIGHT; ++i)
         {
             for (j = 0; j < BUF_WIDTH; ++j)
@@ -357,31 +403,4 @@ void loop()
 #ifdef HAS_INPUT
     update_input();
 #endif
-    if(!pending) {
-        uint32_t end_ms = pdTICKS_TO_MS(xTaskGetTickCount());
-        render_stats_end(&stats,end_ms);
-        static uint32_t fps_ts = 0;
-        render_stats_t rep;
-        if (end_ms > fps_ts + 1000 && render_stats_report(&stats,&rep))
-        {
-            fps_ts = end_ms;
-            float render_time_per_frame = 1000.f/rep.avg_fps;
-            printf(
-                "avg fps: %0.1f\n"
-                "1%% lows: %0.1f\n"
-                "avg render time: %0.1fms\n"
-                "min render time: %0.1fms\n"
-                "max render time: %0.1fms\n"
-                "avg time per frame: %0.1fms\n"
-                "\n",
-                rep.avg_fps,
-                rep.one_pct_low_fps,
-                rep.avg_render_ms,
-                rep.min_render_ms,
-                rep.max_render_ms,
-                render_time_per_frame
-            );
-            fps = roundf(rep.avg_fps);
-        }
-    }
 }
