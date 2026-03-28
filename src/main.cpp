@@ -23,8 +23,7 @@
 using namespace gfx;
 using namespace uix;
 using color_t = gfx::color<typename gfx::rgb_pixel<16>>;
-constexpr static const size_t BUF_WIDTH = (LCD_WIDTH/ 4);
-constexpr static const size_t BUF_HEIGHT = ((LCD_HEIGHT / 4) + 6);
+static constexpr const size16 buffer_dim((LCD_WIDTH/ 4), ((LCD_HEIGHT / 4) + 6));
 #ifdef USE_SPANS
 #define PAL_TYPE uint16_t
 // store preswapped uint16_ts for performance
@@ -122,7 +121,7 @@ static font_draw_cache text_draw_cache;
 #endif
 // the main screen
 static screen_t anim_screen;
-static uint8_t fire_buf[BUF_HEIGHT][BUF_WIDTH]; // VGA buffer, quarter resolution w/extra lines
+static uint8_t buffer[buffer_dim.height][buffer_dim.width]; // VGA buffer, quarter resolution w/extra lines
 static int fps = 0;
 static bool show_fps = false;
 static uint32_t start_render_ms = 0;
@@ -152,7 +151,7 @@ static void fire_on_paint(screen_t::control_surface_type &destination, const sre
             for (int x = clip.x1; x <= clip.x2; x+=2) {
                 int i = y >> 2;
                 int j = x >> 2;
-                PAL_TYPE px = fire_cols[fire_buf[i][j]];
+                PAL_TYPE px = fire_cols[buffer[i][j]];
                 // set the pixels
                 *(prow++)=px;
                 // if the clip x ends on an odd value, we need to not set the pointer
@@ -175,7 +174,7 @@ static void fire_on_paint(screen_t::control_surface_type &destination, const sre
             for (int x = clip.x1; x <= clip.x2; ++x) {
                 int i = y >> 2;
                 int j = x >> 2;
-                PAL_TYPE px = fire_cols[fire_buf[i][j]];
+                PAL_TYPE px = fire_cols[buffer[i][j]];
                 // set the pixel
                 destination.point(point16(x,y),px);
             }
@@ -299,12 +298,7 @@ extern "C" void app_main()
     text_draw_cache.max_entries(20);
     text_draw_cache.initialize();
 #endif
-    for (int i = 0; i < BUF_HEIGHT; i++) {
-        for (int j = 0; j < BUF_WIDTH; j++) {
-            fire_buf[i][j] = 0;
-        }
-    }
-
+    
     // for rendering statistics
     render_stats_init(&stats,stats_interval_buffer,stats_duration_buffer,FPS_FRAMES);
     // init the UI screen
@@ -378,53 +372,53 @@ void loop()
         start_render_ms = pdTICKS_TO_MS(xTaskGetTickCount());
         render_stats_start(&stats, start_render_ms);
         render_pending = true;
-        for (i = 1; i < BUF_HEIGHT; ++i)
+        for (i = 1; i < buffer_dim.height; ++i)
         {
-            for (j = 0; j < BUF_WIDTH; ++j)
+            for (j = 0; j < buffer_dim.width; ++j)
             {
                 if (j == 0)
-                    fire_buf[i - 1][j] = (fire_buf[i][j] +
-                                    fire_buf[i - 1][BUF_WIDTH - 1] +
-                                    fire_buf[i][j + 1] +
-                                    fire_buf[i + 1][j]) >>
+                    buffer[i - 1][j] = (buffer[i][j] +
+                                    buffer[i - 1][buffer_dim.width - 1] +
+                                    buffer[i][j + 1] +
+                                    buffer[i + 1][j]) >>
                                     2;
-                else if (j == BUF_WIDTH-1)
-                    fire_buf[i - 1][j] = (fire_buf[i][j] +
-                                    fire_buf[i][j - 1] +
-                                    fire_buf[i + 1][0] +
-                                    fire_buf[i + 1][j]) >>
+                else if (j == buffer_dim.width-1)
+                    buffer[i - 1][j] = (buffer[i][j] +
+                                    buffer[i][j - 1] +
+                                    buffer[i + 1][0] +
+                                    buffer[i + 1][j]) >>
                                     2;
                 else
-                    fire_buf[i - 1][j] = (fire_buf[i][j] +
-                                    fire_buf[i][j - 1] +
-                                    fire_buf[i][j + 1] +
-                                    fire_buf[i + 1][j]) >>
+                    buffer[i - 1][j] = (buffer[i][j] +
+                                    buffer[i][j - 1] +
+                                    buffer[i][j + 1] +
+                                    buffer[i + 1][j]) >>
                                     2;
 
-                if (fire_buf[i][j] > 11)
-                    fire_buf[i][j] = fire_buf[i][j] - 12;
-                else if (fire_buf[i][j] > 3)
-                    fire_buf[i][j] = fire_buf[i][j] - 4;
+                if (buffer[i][j] > 11)
+                    buffer[i][j] = buffer[i][j] - 12;
+                else if (buffer[i][j] > 3)
+                    buffer[i][j] = buffer[i][j] - 4;
                 else
                 {
-                    if (fire_buf[i][j] > 0)
-                        fire_buf[i][j]--;
-                    if (fire_buf[i][j] > 0)
-                        fire_buf[i][j]--;
-                    if (fire_buf[i][j] > 0)
-                        fire_buf[i][j]--;
+                    if (buffer[i][j] > 0)
+                        buffer[i][j]--;
+                    if (buffer[i][j] > 0)
+                        buffer[i][j]--;
+                    if (buffer[i][j] > 0)
+                        buffer[i][j]--;
                 }
             }
         }
         delta = 0;
-        for (j = 0; j < BUF_WIDTH; j++)
+        for (j = 0; j < buffer_dim.width; j++)
         {
             if (esp_random() % 10 < 5)
             {
                 delta = (esp_random() & 1) * 255;
             }
-            fire_buf[BUF_HEIGHT - 2][j] = delta;
-            fire_buf[BUF_HEIGHT - 1][j] = delta;
+            buffer[buffer_dim.height - 2][j] = delta;
+            buffer[buffer_dim.height - 1][j] = delta;
         }
         fire_painter.invalidate();
         // flag that we need to capture CPU time after update()
