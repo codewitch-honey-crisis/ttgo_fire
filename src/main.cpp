@@ -1,6 +1,6 @@
 #define USE_SPANS
 #define FPS_FRAMES 100
-#define BLUE_FLAME
+//#define BLUE_FLAME
 #include <stdio.h>
 #include <stdlib.h>
 #include <freertos/FreeRTOS.h>
