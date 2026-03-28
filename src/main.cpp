@@ -114,6 +114,7 @@ using screen_t = screen<rgb_pixel<16>>;
 using color_t = color<typename screen_t::pixel_type>;
 // for access to RGB8888 colors which controls use
 using color32_t = color<rgba_pixel<32>>;
+// our fps font
 static tt_font text_font(telegrama,LCD_HEIGHT/10,font_size_units::px);
 #ifdef FONT_CACHE
 static font_measure_cache text_measure_cache;
@@ -122,6 +123,7 @@ static font_draw_cache text_draw_cache;
 // the main screen
 static screen_t anim_screen;
 static uint8_t buffer[buffer_dim.height][buffer_dim.width]; // VGA buffer, quarter resolution w/extra lines
+// timing and statistics
 static int fps = 0;
 static bool show_fps = false;
 static uint32_t start_render_ms = 0;
@@ -284,7 +286,7 @@ void loop_task(void* arg) {
 extern "C" void app_main() 
 {
     printf("ESP-IDF version %d.%d.%d\n",ESP_IDF_VERSION_MAJOR, ESP_IDF_VERSION_MINOR,ESP_IDF_VERSION_PATCH);
-
+    // initialize the panel
 #ifdef BUTTON
     panel_button_init();
 #endif
@@ -307,6 +309,9 @@ extern "C" void app_main()
         esp_restart();
     }
 #ifdef FONT_CACHE
+    // we don't need much, just "fps: " and then digits
+    // this is a case where a little cache goes a long
+    // way
     text_measure_cache.max_entries(20);
     text_measure_cache.initialize();
     text_draw_cache.max_entries(20);
@@ -317,7 +322,7 @@ extern "C" void app_main()
     render_stats_init(&stats,stats_interval_buffer,stats_duration_buffer,FPS_FRAMES);
     // init the UI screen
     screen_init();
-
+    // start the app loop task
     TaskHandle_t handle;
     xTaskCreate(loop_task,"loop_task",8192,nullptr,uxTaskPriorityGet(NULL),&handle);
 }
