@@ -118,9 +118,14 @@ static int fps = 0;
 static bool show_fps = false;
 static uint32_t start_render_ms = 0;
 static volatile uint32_t end_render_ms = 0;
+static uint32_t cpu_time_accum = 0;
+static int cpu_time_count = 0;
 // set true once we've called render_stats_start for a frame
 // and are waiting for the final flush to complete
 static volatile bool render_pending = false;
+// set true on the iteration where we rendered + called update(),
+// cleared after we capture the CPU end timestamp
+static bool cpu_stamp_needed = false;
 static void fire_on_paint(screen_t::control_surface_type &destination, const srect16 &clip, void* state)
 {
  #ifdef USE_SPANS
@@ -306,8 +311,8 @@ void loop()
 {
     
     unsigned int i, j, delta;    // looping variables, counters, and data
-    bool pending = anim_screen.flush_pending();
-    if(!pending) {
+    bool flush_pending = anim_screen.flush_pending();
+    if(!flush_pending) {
         // if we were waiting for DMA to finish, grab the end timestamp
         // BEFORE starting the next frame's timing. This ensures the
         // start/end pair fed to render_stats belongs to the same frame.
@@ -326,12 +331,21 @@ void loop()
                 {
                     fps_ts = ems;
                     float render_time_per_frame = 1000.f/rep.avg_fps;
+                    float avg_cpu_time = 0;
+                    float cpu_pct = 0;
+                    if(cpu_time_count > 0) {
+                        avg_cpu_time = (float)cpu_time_accum / cpu_time_count;
+                        cpu_pct = 100.f * (avg_cpu_time / render_time_per_frame);
+                    }
+                    cpu_time_accum = 0;
+                    cpu_time_count = 0;
                     printf(
                         "avg fps: %0.1f\n"
                         "1%% lows: %0.1f\n"
                         "avg render time: %0.1fms\n"
                         "min render time: %0.1fms\n"
                         "max render time: %0.1fms\n"
+                        "avg cpu time: %0.1fms %0.1f%%\n"
                         "avg time per frame: %0.1fms\n"
                         "\n",
                         rep.avg_fps,
@@ -339,6 +353,8 @@ void loop()
                         rep.avg_render_ms,
                         rep.min_render_ms,
                         rep.max_render_ms,
+                        avg_cpu_time,
+                        cpu_pct,
                         render_time_per_frame
                     );
                     fps = roundf(rep.avg_fps);
@@ -398,8 +414,20 @@ void loop()
             fire_buf[BUF_HEIGHT - 1][j] = delta;
         }
         fire_painter.invalidate();
+        // flag that we need to capture CPU time after update()
+        cpu_stamp_needed = true;
     }
     anim_screen.update();
+    // capture CPU end time exactly once - right after the update() call
+    // on the iteration where we actually did the rendering work.
+    // This captures fire sim + paint callbacks + flush initiation,
+    // but NOT the time spent waiting for DMA to complete.
+    if(cpu_stamp_needed) {
+        uint32_t cpu_end = pdTICKS_TO_MS(xTaskGetTickCount());
+        cpu_time_accum += (cpu_end - start_render_ms);
+        cpu_time_count++;
+        cpu_stamp_needed = false;
+    }
 #ifdef HAS_INPUT
     update_input();
 #endif
